@@ -79,7 +79,8 @@ app.get('/api/users/:id', (req, res) => {
             referralCode: user.referralCode,
             referrals: user.referrals || [],
             referralBonus: user.referralBonus || 0,
-            referralCount: user.referralCount || 0
+            referralCount: user.referralCount || 0,
+            deviceId: user.deviceId
         });
     } else {
         res.status(404).json({ error: 'User not found' });
@@ -371,7 +372,18 @@ app.put('/api/withdraw-requests/:id/reject', (req, res) => {
 // ==================== AUTH ROUTES ====================
 app.post('/api/register', (req, res) => {
     const db = readDB();
-    const { username, email, password, referralCode } = req.body;
+    const { username, email, password, referralCode, deviceId } = req.body;
+    
+    // 🔥 DEVICE CHECK - ONE ACCOUNT PER DEVICE
+    if (deviceId) {
+        const existingDeviceUser = db.users.find(u => u.deviceId === deviceId && u.role === 'user');
+        if (existingDeviceUser) {
+            return res.json({ 
+                success: false, 
+                message: '❌ This device already has an account! Only one account per device is allowed.' 
+            });
+        }
+    }
     
     const existingUser = db.users.find(u => u.username === username || u.email === email);
     if (existingUser) {
@@ -404,7 +416,7 @@ app.post('/api/register', (req, res) => {
         password,
         role: 'user',
         walletBalance: totalBonus,
-        deviceId: req.headers['user-agent'] || 'unknown',
+        deviceId: deviceId || 'unknown_device',
         referralCode: generateReferralCode(username),
         referredBy: referrer ? referrer.id : null,
         referrals: [],
@@ -488,7 +500,8 @@ app.post('/api/login', (req, res) => {
                 referralBonus: user.referralBonus || 0,
                 referralCount: user.referralCount || 0,
                 isFirstUser: user.isFirstUser || false,
-                password: user.password
+                password: user.password,
+                deviceId: user.deviceId
             }
         });
     } else {
