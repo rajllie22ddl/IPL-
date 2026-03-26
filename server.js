@@ -10,7 +10,7 @@ app.use(express.json());
 
 // ==================== MONGODB CONNECTION ====================
 // 👇 YAHAN APNA PASSWORD DALO
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://ahirwarrahul37811_db_user:YOUR_PASSWORD@cluster0.p43ldub.mongodb.net/iplpredictor';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://ahiwarrahul3781.db_user:Q4Rr2KYhS9PsljzZ@cluster0.p431dub.mongodb.net/iplpredictor';
 
 mongoose.connect(MONGODB_URI)
 .then(() => console.log('✅ MongoDB Connected!'))
