@@ -8,9 +8,8 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// ==================== MONGODB CONNECTION ====================
-// 👇 YAHAN APNA PASSWORD DALO
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://ahirwarrahul37811_db_user:Rahul9876@cluster0.p43ldub.mongodb.net/iplpredictor';
+// MongoDB Connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://ahiwarrahul3781.db_user:Q4Rr2KYhS9PsljzZ@cluster0.p431dub.mongodb.net/iplpredictor';
 
 mongoose.connect(MONGODB_URI)
 .then(() => console.log('✅ MongoDB Connected!'))
@@ -107,6 +106,7 @@ function generateReferralCode(username) {
 
 // ==================== USER ROUTES ====================
 
+// Get all users
 app.get('/api/users', async (req, res) => {
     try {
         const users = await User.find({ role: 'user' }).select('-password');
@@ -116,6 +116,7 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
+// Get user by id
 app.get('/api/users/:id', async (req, res) => {
     try {
         const user = await User.findById(req.params.id).select('-password');
@@ -126,6 +127,7 @@ app.get('/api/users/:id', async (req, res) => {
     }
 });
 
+// Update user wallet
 app.put('/api/users/:id/wallet', async (req, res) => {
     try {
         const { walletBalance } = req.body;
@@ -136,6 +138,7 @@ app.put('/api/users/:id/wallet', async (req, res) => {
     }
 });
 
+// Toggle user status
 app.put('/api/users/:id/toggle-status', async (req, res) => {
     try {
         const user = await User.findById(req.params.id);
@@ -147,6 +150,7 @@ app.put('/api/users/:id/toggle-status', async (req, res) => {
     }
 });
 
+// Get user predictions
 app.get('/api/users/:userId/predictions', async (req, res) => {
     try {
         const predictions = await Prediction.find({ userId: req.params.userId });
@@ -156,6 +160,7 @@ app.get('/api/users/:userId/predictions', async (req, res) => {
     }
 });
 
+// Get user transactions
 app.get('/api/users/:userId/transactions', async (req, res) => {
     try {
         const transactions = await Transaction.find({ userId: req.params.userId });
@@ -167,6 +172,7 @@ app.get('/api/users/:userId/transactions', async (req, res) => {
 
 // ==================== MATCH ROUTES ====================
 
+// Get all matches
 app.get('/api/matches', async (req, res) => {
     try {
         const matches = await Match.find().sort({ date: 1 });
@@ -176,6 +182,7 @@ app.get('/api/matches', async (req, res) => {
     }
 });
 
+// Add match
 app.post('/api/matches', async (req, res) => {
     try {
         const match = new Match(req.body);
@@ -186,6 +193,7 @@ app.post('/api/matches', async (req, res) => {
     }
 });
 
+// Update match
 app.put('/api/matches/:id', async (req, res) => {
     try {
         await Match.findByIdAndUpdate(req.params.id, req.body);
@@ -195,6 +203,7 @@ app.put('/api/matches/:id', async (req, res) => {
     }
 });
 
+// Delete match
 app.delete('/api/matches/:id', async (req, res) => {
     try {
         await Match.findByIdAndDelete(req.params.id);
@@ -207,6 +216,7 @@ app.delete('/api/matches/:id', async (req, res) => {
 
 // ==================== PREDICTION ROUTES ====================
 
+// Get all predictions
 app.get('/api/predictions', async (req, res) => {
     try {
         const predictions = await Prediction.find();
@@ -216,17 +226,20 @@ app.get('/api/predictions', async (req, res) => {
     }
 });
 
+// Add prediction
 app.post('/api/predictions', async (req, res) => {
     try {
         const prediction = new Prediction(req.body);
         await prediction.save();
         
+        // Update user wallet
         const user = await User.findById(prediction.userId);
         if (user) {
             user.walletBalance -= prediction.betAmount;
             await user.save();
         }
         
+        // Update match total pool
         const match = await Match.findById(prediction.matchId);
         if (match) {
             match.totalPool = (match.totalPool || 0) + prediction.betAmount;
@@ -239,6 +252,7 @@ app.post('/api/predictions', async (req, res) => {
     }
 });
 
+// Update prediction
 app.put('/api/predictions/:id', async (req, res) => {
     try {
         await Prediction.findByIdAndUpdate(req.params.id, req.body);
@@ -250,6 +264,7 @@ app.put('/api/predictions/:id', async (req, res) => {
 
 // ==================== TRANSACTION ROUTES ====================
 
+// Get all transactions
 app.get('/api/transactions', async (req, res) => {
     try {
         const transactions = await Transaction.find();
@@ -259,6 +274,7 @@ app.get('/api/transactions', async (req, res) => {
     }
 });
 
+// Add transaction
 app.post('/api/transactions', async (req, res) => {
     try {
         const transaction = new Transaction(req.body);
@@ -271,6 +287,7 @@ app.post('/api/transactions', async (req, res) => {
 
 // ==================== PAYMENT ROUTES ====================
 
+// Get payment requests
 app.get('/api/payment-requests', async (req, res) => {
     try {
         const requests = await PaymentRequest.find();
@@ -280,6 +297,7 @@ app.get('/api/payment-requests', async (req, res) => {
     }
 });
 
+// Add payment request
 app.post('/api/payment-requests', async (req, res) => {
     try {
         const request = new PaymentRequest(req.body);
@@ -290,6 +308,7 @@ app.post('/api/payment-requests', async (req, res) => {
     }
 });
 
+// Approve payment
 app.put('/api/payment-requests/:id/approve', async (req, res) => {
     try {
         const payment = await PaymentRequest.findById(req.params.id);
@@ -322,6 +341,7 @@ app.put('/api/payment-requests/:id/approve', async (req, res) => {
     }
 });
 
+// Reject payment
 app.put('/api/payment-requests/:id/reject', async (req, res) => {
     try {
         const payment = await PaymentRequest.findById(req.params.id);
@@ -340,6 +360,7 @@ app.put('/api/payment-requests/:id/reject', async (req, res) => {
 
 // ==================== WITHDRAWAL ROUTES ====================
 
+// Get withdraw requests
 app.get('/api/withdraw-requests', async (req, res) => {
     try {
         const requests = await WithdrawRequest.find();
@@ -349,6 +370,7 @@ app.get('/api/withdraw-requests', async (req, res) => {
     }
 });
 
+// Add withdraw request
 app.post('/api/withdraw-requests', async (req, res) => {
     try {
         const request = new WithdrawRequest(req.body);
@@ -366,6 +388,7 @@ app.post('/api/withdraw-requests', async (req, res) => {
     }
 });
 
+// Approve withdrawal
 app.put('/api/withdraw-requests/:id/approve', async (req, res) => {
     try {
         const withdraw = await WithdrawRequest.findById(req.params.id);
@@ -392,6 +415,7 @@ app.put('/api/withdraw-requests/:id/approve', async (req, res) => {
     }
 });
 
+// Reject withdrawal
 app.put('/api/withdraw-requests/:id/reject', async (req, res) => {
     try {
         const withdraw = await WithdrawRequest.findById(req.params.id);
@@ -417,10 +441,12 @@ app.put('/api/withdraw-requests/:id/reject', async (req, res) => {
 
 // ==================== AUTH ROUTES ====================
 
+// Register
 app.post('/api/register', async (req, res) => {
     try {
         const { username, email, password, referralCode, deviceId } = req.body;
         
+        // Check if device already has an account
         if (deviceId) {
             const existingDeviceUser = await User.findOne({ deviceId, role: 'user' });
             if (existingDeviceUser) {
@@ -428,14 +454,17 @@ app.post('/api/register', async (req, res) => {
             }
         }
         
+        // Check if username or email exists
         const existingUser = await User.findOne({ $or: [{ username }, { email }] });
         if (existingUser) {
             return res.json({ success: false, message: 'Username or email already exists' });
         }
         
+        // Check if first user
         const userCount = await User.countDocuments({ role: 'user' });
         const isFirstUser = userCount === 0;
         
+        // Process referral
         let referrer = null;
         let referralBonus = 0;
         if (referralCode && !isFirstUser) {
@@ -452,6 +481,7 @@ app.post('/api/register', async (req, res) => {
             totalBonus += FIRST_USER_BONUS;
         }
         
+        // Create user
         const newUser = new User({
             username,
             email,
@@ -467,6 +497,7 @@ app.post('/api/register', async (req, res) => {
         
         await newUser.save();
         
+        // Process referral bonus for referrer
         if (referrer) {
             referrer.walletBalance += 5;
             referrer.referralBonus += 5;
@@ -490,6 +521,7 @@ app.post('/api/register', async (req, res) => {
             await referrerTransaction.save();
         }
         
+        // Add welcome bonus transaction
         const welcomeTransaction = new Transaction({
             userId: newUser.id,
             type: 'bonus',
@@ -513,6 +545,7 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
+// Login
 app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -626,9 +659,11 @@ async function initData() {
     }
 }
 
+// ==================== START SERVER ====================
 app.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     await initData();
     console.log(`🔐 Admin Login: admin / admin123`);
     console.log(`📊 MongoDB: Connected`);
 });
+        
