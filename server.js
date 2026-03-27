@@ -1,294 +1,245 @@
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
-const fs = require('fs');
-const path = require('path');
+const mongoose = require('mongoose');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-const DB_FILE = path.join(__dirname, 'database.json');
+// 🔥 MongoDB Connection (tune diya hai)
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://rahul:rahul12345@tournament-cluster.rhtjib.mongodb.net/iplpredictor?retryWrites=true&w=majority';
 
-function initDatabase() {
-    if (!fs.existsSync(DB_FILE)) {
-        const initialData = {
-            users: [
-                {
-                    id: '1',
-                    username: 'admin',
-                    email: 'admin@ipl.com',
-                    password: 'admin123',
-                    role: 'admin',
-                    walletBalance: 0,
-                    deviceId: 'admin_device',
-                    referralCode: 'ADMIN123',
-                    referredBy: null,
-                    referrals: [],
-                    referralBonus: 0,
-                    referralCount: 0,
-                    isFirstUser: false,
-                    createdAt: new Date().toISOString()
-                }
-            ],
-            matches: [],
-            predictions: [],
-            transactions: [],
-            paymentRequests: [],
-            withdrawRequests: []
-        };
-        fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
-        console.log('✅ Database created!');
-    }
-}
+mongoose.connect(MONGODB_URI)
+.then(() => console.log('✅ MongoDB Connected'))
+.catch(err => console.log('❌ MongoDB Error:', err.message));
 
-function readDB() {
-    const data = fs.readFileSync(DB_FILE, 'utf8');
-    return JSON.parse(data);
-}
+// ==================== SCHEMAS ====================
 
-function writeDB(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
+const userSchema = new mongoose.Schema({
+    username: String,
+    email: String,
+    password: String,
+    role: { type: String, default: 'user' },
+    walletBalance: { type: Number, default: 0 },
+    deviceId: String,
+    referralCode: String,
+    referredBy: String,
+    referrals: { type: Array, default: [] },
+    referralBonus: { type: Number, default: 0 },
+    referralCount: { type: Number, default: 0 },
+    isFirstUser: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const matchSchema = new mongoose.Schema({
+    matchNumber: Number,
+    team1: String,
+    team2: String,
+    date: Date,
+    time: String,
+    venue: String,
+    status: { type: String, default: 'upcoming' },
+    questions: Array,
+    totalPool: { type: Number, default: 0 },
+    result: Object,
+    createdAt: { type: Date, default: Date.now }
+});
+
+const predictionSchema = new mongoose.Schema({
+    userId: String,
+    matchId: String,
+    matchName: String,
+    predictions: Array,
+    betAmount: Number,
+    status: { type: String, default: 'pending' },
+    points: Number,
+    winningPercent: Number,
+    winningAmount: Number,
+    platformCommission: Number,
+    createdAt: { type: Date, default: Date.now }
+});
+
+const transactionSchema = new mongoose.Schema({
+    userId: String,
+    type: String,
+    amount: Number,
+    description: String,
+    status: { type: String, default: 'completed' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const paymentRequestSchema = new mongoose.Schema({
+    userId: String,
+    amount: Number,
+    utrNumber: String,
+    status: { type: String, default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const withdrawRequestSchema = new mongoose.Schema({
+    userId: String,
+    amount: Number,
+    upiId: String,
+    status: { type: String, default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+const Match = mongoose.model('Match', matchSchema);
+const Prediction = mongoose.model('Prediction', predictionSchema);
+const Transaction = mongoose.model('Transaction', transactionSchema);
+const PaymentRequest = mongoose.model('PaymentRequest', paymentRequestSchema);
+const WithdrawRequest = mongoose.model('WithdrawRequest', withdrawRequestSchema);
 
 function generateReferralCode(username) {
-    const prefix = username.substring(0, 3).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-    return prefix + random;
+    return username.substring(0, 3).toUpperCase() + Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 // ==================== USER ROUTES ====================
-app.get('/api/users', (req, res) => {
-    const db = readDB();
-    const users = db.users.filter(u => u.role === 'user');
+app.get('/api/users', async (req, res) => {
+    const users = await User.find({ role: 'user' });
     res.json(users);
 });
 
-app.get('/api/users/:id', (req, res) => {
-    const db = readDB();
-    const user = db.users.find(u => u.id === req.params.id);
-    if (user) {
-        res.json({
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            walletBalance: user.walletBalance,
-            referralCode: user.referralCode,
-            referrals: user.referrals || [],
-            referralBonus: user.referralBonus || 0,
-            referralCount: user.referralCount || 0
-        });
-    } else {
-        res.status(404).json({ error: 'User not found' });
-    }
+app.get('/api/users/:id', async (req, res) => {
+    const user = await User.findById(req.params.id);
+    res.json(user);
 });
 
-app.put('/api/users/:id/wallet', (req, res) => {
-    const db = readDB();
-    const userId = req.params.id;
-    const { walletBalance } = req.body;
-    
-    const index = db.users.findIndex(u => u.id === userId);
-    if (index !== -1) {
-        db.users[index].walletBalance = walletBalance;
-        writeDB(db);
-        res.json({ success: true, walletBalance });
-    } else {
-        res.status(404).json({ success: false, message: 'User not found' });
-    }
+app.put('/api/users/:id/wallet', async (req, res) => {
+    await User.findByIdAndUpdate(req.params.id, { walletBalance: req.body.walletBalance });
+    res.json({ success: true });
 });
 
-app.put('/api/users/:id/toggle-status', (req, res) => {
-    const db = readDB();
-    const userId = req.params.id;
-    const index = db.users.findIndex(u => u.id === userId);
-    if (index !== -1) {
-        db.users[index].isActive = db.users[index].isActive === false ? true : false;
-        writeDB(db);
-        res.json({ success: true, isActive: db.users[index].isActive });
-    } else {
-        res.json({ success: false });
-    }
+app.put('/api/users/:id/toggle-status', async (req, res) => {
+    const user = await User.findById(req.params.id);
+    user.isActive = !user.isActive;
+    await user.save();
+    res.json({ success: true });
 });
 
-app.get('/api/users/:userId/predictions', (req, res) => {
-    const db = readDB();
-    const predictions = db.predictions.filter(p => p.userId === req.params.userId);
+app.get('/api/users/:userId/predictions', async (req, res) => {
+    const predictions = await Prediction.find({ userId: req.params.userId });
     res.json(predictions);
 });
 
-app.get('/api/users/:userId/transactions', (req, res) => {
-    const db = readDB();
-    const transactions = db.transactions.filter(t => t.userId === req.params.userId);
+app.get('/api/users/:userId/transactions', async (req, res) => {
+    const transactions = await Transaction.find({ userId: req.params.userId });
     res.json(transactions);
 });
 
 // ==================== MATCH ROUTES ====================
-app.get('/api/matches', (req, res) => {
-    const db = readDB();
-    res.json(db.matches);
+app.get('/api/matches', async (req, res) => {
+    const matches = await Match.find();
+    res.json(matches);
 });
 
-app.post('/api/matches', (req, res) => {
-    const db = readDB();
-    const match = req.body;
-    match.id = Date.now().toString();
-    match.totalPool = match.totalPool || 0;
-    match.result = null;
-    match.createdAt = new Date().toISOString();
-    db.matches.push(match);
-    writeDB(db);
+app.post('/api/matches', async (req, res) => {
+    const match = new Match(req.body);
+    await match.save();
     res.json({ success: true, match });
 });
 
-app.put('/api/matches/:id', (req, res) => {
-    const db = readDB();
-    const matchId = req.params.id;
-    const updatedMatch = req.body;
-    const index = db.matches.findIndex(m => m.id === matchId);
-    if (index !== -1) {
-        db.matches[index] = { ...db.matches[index], ...updatedMatch };
-        writeDB(db);
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ success: false });
-    }
+app.put('/api/matches/:id', async (req, res) => {
+    await Match.findByIdAndUpdate(req.params.id, req.body);
+    res.json({ success: true });
 });
 
-app.delete('/api/matches/:id', (req, res) => {
-    const db = readDB();
-    const matchId = req.params.id;
-    db.matches = db.matches.filter(m => m.id !== matchId);
-    db.predictions = db.predictions.filter(p => p.matchId !== matchId);
-    writeDB(db);
+app.delete('/api/matches/:id', async (req, res) => {
+    await Match.findByIdAndDelete(req.params.id);
+    await Prediction.deleteMany({ matchId: req.params.id });
     res.json({ success: true });
 });
 
 // ==================== PREDICTION ROUTES ====================
-app.get('/api/predictions', (req, res) => {
-    const db = readDB();
-    res.json(db.predictions);
+app.get('/api/predictions', async (req, res) => {
+    const predictions = await Prediction.find();
+    res.json(predictions);
 });
 
-app.post('/api/predictions', (req, res) => {
-    const db = readDB();
-    const prediction = req.body;
-    prediction.id = Date.now().toString();
-    prediction.status = 'pending';
-    prediction.createdAt = new Date().toISOString();
+app.post('/api/predictions', async (req, res) => {
+    const prediction = new Prediction(req.body);
+    await prediction.save();
     
-    const matchIndex = db.matches.findIndex(m => m.id === prediction.matchId);
-    if (matchIndex !== -1) {
-        db.matches[matchIndex].totalPool = (db.matches[matchIndex].totalPool || 0) + prediction.betAmount;
+    const user = await User.findById(prediction.userId);
+    if (user) {
+        user.walletBalance -= prediction.betAmount;
+        await user.save();
     }
     
-    db.predictions.push(prediction);
-    
-    const userIndex = db.users.findIndex(u => u.id === prediction.userId);
-    if (userIndex !== -1) {
-        db.users[userIndex].walletBalance -= prediction.betAmount;
+    const match = await Match.findById(prediction.matchId);
+    if (match) {
+        match.totalPool = (match.totalPool || 0) + prediction.betAmount;
+        await match.save();
     }
     
-    writeDB(db);
     res.json({ success: true, prediction });
 });
 
-app.put('/api/predictions/:id', (req, res) => {
-    const db = readDB();
-    const predictionId = req.params.id;
-    const updateData = req.body;
-    
-    const index = db.predictions.findIndex(p => p.id === predictionId);
-    if (index !== -1) {
-        db.predictions[index] = { ...db.predictions[index], ...updateData };
-        writeDB(db);
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ success: false, message: 'Prediction not found' });
-    }
+app.put('/api/predictions/:id', async (req, res) => {
+    await Prediction.findByIdAndUpdate(req.params.id, req.body);
+    res.json({ success: true });
 });
 
 // ==================== TRANSACTION ROUTES ====================
-app.get('/api/transactions', (req, res) => {
-    const db = readDB();
-    res.json(db.transactions || []);
+app.get('/api/transactions', async (req, res) => {
+    const transactions = await Transaction.find();
+    res.json(transactions);
 });
 
-app.post('/api/transactions', (req, res) => {
-    const db = readDB();
-    const transaction = req.body;
-    transaction.id = Date.now().toString();
-    transaction.createdAt = new Date().toISOString();
-    
-    if (!db.transactions) db.transactions = [];
-    db.transactions.push(transaction);
-    writeDB(db);
-    res.json({ success: true, transaction });
+app.post('/api/transactions', async (req, res) => {
+    const transaction = new Transaction(req.body);
+    await transaction.save();
+    res.json({ success: true });
 });
 
 // ==================== PAYMENT ROUTES ====================
-app.get('/api/payment-requests', (req, res) => {
-    const db = readDB();
-    res.json(db.paymentRequests || []);
+app.get('/api/payment-requests', async (req, res) => {
+    const requests = await PaymentRequest.find();
+    res.json(requests);
 });
 
-app.post('/api/payment-requests', (req, res) => {
-    const db = readDB();
-    const request = req.body;
-    request.id = Date.now().toString();
-    request.status = 'pending';
-    request.createdAt = new Date().toISOString();
-    
-    if (!db.paymentRequests) db.paymentRequests = [];
-    db.paymentRequests.push(request);
-    writeDB(db);
-    res.json({ success: true, request });
+app.post('/api/payment-requests', async (req, res) => {
+    const request = new PaymentRequest(req.body);
+    await request.save();
+    res.json({ success: true });
 });
 
-app.put('/api/payment-requests/:id/approve', (req, res) => {
-    const db = readDB();
-    const paymentId = req.params.id;
-    const payment = db.paymentRequests.find(p => p.id === paymentId);
-    
+app.put('/api/payment-requests/:id/approve', async (req, res) => {
+    const payment = await PaymentRequest.findById(req.params.id);
     if (payment && payment.status === 'pending') {
         payment.status = 'approved';
-        payment.approvedAt = new Date().toISOString();
+        await payment.save();
         
-        const userIndex = db.users.findIndex(u => u.id === payment.userId);
-        if (userIndex !== -1) {
-            db.users[userIndex].walletBalance += payment.amount;
+        const user = await User.findById(payment.userId);
+        if (user) {
+            user.walletBalance += payment.amount;
+            await user.save();
         }
         
-        if (!db.transactions) db.transactions = [];
-        db.transactions.push({
-            id: Date.now().toString(),
+        const transaction = new Transaction({
             userId: payment.userId,
             type: 'deposit',
             amount: payment.amount,
             description: `Deposit via UTR: ${payment.utrNumber}`,
-            status: 'completed',
-            createdAt: new Date().toISOString()
+            status: 'completed'
         });
+        await transaction.save();
         
-        writeDB(db);
         res.json({ success: true });
     } else {
         res.json({ success: false });
     }
 });
 
-app.put('/api/payment-requests/:id/reject', (req, res) => {
-    const db = readDB();
-    const paymentId = req.params.id;
-    const payment = db.paymentRequests.find(p => p.id === paymentId);
-    
+app.put('/api/payment-requests/:id/reject', async (req, res) => {
+    const payment = await PaymentRequest.findById(req.params.id);
     if (payment && payment.status === 'pending') {
         payment.status = 'rejected';
-        payment.remarks = req.body.remarks || 'Rejected';
-        writeDB(db);
+        await payment.save();
         res.json({ success: true });
     } else {
         res.json({ success: false });
@@ -296,72 +247,57 @@ app.put('/api/payment-requests/:id/reject', (req, res) => {
 });
 
 // ==================== WITHDRAWAL ROUTES ====================
-app.get('/api/withdraw-requests', (req, res) => {
-    const db = readDB();
-    res.json(db.withdrawRequests || []);
+app.get('/api/withdraw-requests', async (req, res) => {
+    const requests = await WithdrawRequest.find();
+    res.json(requests);
 });
 
-app.post('/api/withdraw-requests', (req, res) => {
-    const db = readDB();
-    const request = req.body;
-    request.id = Date.now().toString();
-    request.status = 'pending';
-    request.createdAt = new Date().toISOString();
+app.post('/api/withdraw-requests', async (req, res) => {
+    const request = new WithdrawRequest(req.body);
+    await request.save();
     
-    if (!db.withdrawRequests) db.withdrawRequests = [];
-    db.withdrawRequests.push(request);
-    
-    const userIndex = db.users.findIndex(u => u.id === request.userId);
-    if (userIndex !== -1) {
-        db.users[userIndex].walletBalance -= request.amount;
+    const user = await User.findById(request.userId);
+    if (user) {
+        user.walletBalance -= request.amount;
+        await user.save();
     }
     
-    writeDB(db);
-    res.json({ success: true, request });
+    res.json({ success: true });
 });
 
-app.put('/api/withdraw-requests/:id/approve', (req, res) => {
-    const db = readDB();
-    const withdrawId = req.params.id;
-    const withdraw = db.withdrawRequests.find(w => w.id === withdrawId);
-    
+app.put('/api/withdraw-requests/:id/approve', async (req, res) => {
+    const withdraw = await WithdrawRequest.findById(req.params.id);
     if (withdraw && withdraw.status === 'pending') {
         withdraw.status = 'approved';
-        withdraw.processedAt = new Date().toISOString();
+        await withdraw.save();
         
-        if (!db.transactions) db.transactions = [];
-        db.transactions.push({
-            id: Date.now().toString(),
+        const transaction = new Transaction({
             userId: withdraw.userId,
             type: 'withdrawal',
             amount: -withdraw.amount,
             description: `Withdrawal to UPI: ${withdraw.upiId}`,
-            status: 'completed',
-            createdAt: new Date().toISOString()
+            status: 'completed'
         });
+        await transaction.save();
         
-        writeDB(db);
         res.json({ success: true });
     } else {
         res.json({ success: false });
     }
 });
 
-app.put('/api/withdraw-requests/:id/reject', (req, res) => {
-    const db = readDB();
-    const withdrawId = req.params.id;
-    const withdraw = db.withdrawRequests.find(w => w.id === withdrawId);
-    
+app.put('/api/withdraw-requests/:id/reject', async (req, res) => {
+    const withdraw = await WithdrawRequest.findById(req.params.id);
     if (withdraw && withdraw.status === 'pending') {
         withdraw.status = 'rejected';
-        withdraw.remarks = req.body.remarks || 'Rejected';
+        await withdraw.save();
         
-        const userIndex = db.users.findIndex(u => u.id === withdraw.userId);
-        if (userIndex !== -1) {
-            db.users[userIndex].walletBalance += withdraw.amount;
+        const user = await User.findById(withdraw.userId);
+        if (user) {
+            user.walletBalance += withdraw.amount;
+            await user.save();
         }
         
-        writeDB(db);
         res.json({ success: true });
     } else {
         res.json({ success: false });
@@ -369,22 +305,28 @@ app.put('/api/withdraw-requests/:id/reject', (req, res) => {
 });
 
 // ==================== AUTH ROUTES ====================
-app.post('/api/register', (req, res) => {
-    const db = readDB();
-    const { username, email, password, referralCode } = req.body;
+app.post('/api/register', async (req, res) => {
+    const { username, email, password, referralCode, deviceId } = req.body;
     
-    const existingUser = db.users.find(u => u.username === username || u.email === email);
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
-        return res.json({ success: false, message: 'Username or email already exists' });
+        return res.json({ success: false, message: 'Username or email exists' });
     }
     
-    const existingUsers = db.users.filter(u => u.role === 'user');
-    const isFirstUser = existingUsers.length === 0;
+    if (deviceId) {
+        const existingDevice = await User.findOne({ deviceId, role: 'user' });
+        if (existingDevice) {
+            return res.json({ success: false, message: 'This device already has an account!' });
+        }
+    }
+    
+    const userCount = await User.countDocuments({ role: 'user' });
+    const isFirstUser = userCount === 0;
     
     let referrer = null;
     let referralBonus = 0;
     if (referralCode && !isFirstUser) {
-        referrer = db.users.find(u => u.referralCode === referralCode && u.role === 'user');
+        referrer = await User.findOne({ referralCode });
         if (referrer) {
             referralBonus = 5;
         }
@@ -393,86 +335,61 @@ app.post('/api/register', (req, res) => {
     const WELCOME_BONUS = 5;
     const FIRST_USER_BONUS = 10;
     let totalBonus = WELCOME_BONUS + referralBonus;
-    if (isFirstUser) {
-        totalBonus += FIRST_USER_BONUS;
-    }
+    if (isFirstUser) totalBonus += FIRST_USER_BONUS;
     
-    const newUser = {
-        id: Date.now().toString(),
+    const newUser = new User({
         username,
         email,
         password,
         role: 'user',
         walletBalance: totalBonus,
-        deviceId: req.headers['user-agent'] || 'unknown',
+        deviceId: deviceId || 'unknown',
         referralCode: generateReferralCode(username),
         referredBy: referrer ? referrer.id : null,
-        referrals: [],
-        referralBonus: 0,
-        referralCount: 0,
         isFirstUser: isFirstUser,
-        isActive: true,
-        createdAt: new Date().toISOString()
-    };
-    
-    db.users.push(newUser);
-    
-    if (referrer) {
-        const referrerIndex = db.users.findIndex(u => u.id === referrer.id);
-        if (referrerIndex !== -1) {
-            db.users[referrerIndex].walletBalance += 5;
-            db.users[referrerIndex].referralBonus += 5;
-            db.users[referrerIndex].referralCount += 1;
-            if (!db.users[referrerIndex].referrals) db.users[referrerIndex].referrals = [];
-            db.users[referrerIndex].referrals.push({
-                userId: newUser.id,
-                username: newUser.username,
-                bonus: 5,
-                date: new Date().toISOString()
-            });
-        }
-    }
-    
-    if (!db.transactions) db.transactions = [];
-    db.transactions.push({
-        id: Date.now().toString(),
-        userId: newUser.id,
-        type: 'bonus',
-        amount: totalBonus,
-        description: `Welcome Bonus ₹${WELCOME_BONUS}${referralBonus ? ' + Referral ₹5' : ''}${isFirstUser ? ' + First User ₹10' : ''}`,
-        status: 'completed',
-        createdAt: new Date().toISOString()
+        isActive: true
     });
     
+    await newUser.save();
+    
     if (referrer) {
-        db.transactions.push({
-            id: Date.now().toString(),
+        referrer.walletBalance += 5;
+        referrer.referralBonus += 5;
+        referrer.referralCount += 1;
+        if (!referrer.referrals) referrer.referrals = [];
+        referrer.referrals.push({ userId: newUser.id, username: newUser.username, bonus: 5, date: new Date() });
+        await referrer.save();
+        
+        const refTransaction = new Transaction({
             userId: referrer.id,
             type: 'referral_bonus',
             amount: 5,
             description: `Referral bonus for inviting ${username}`,
-            status: 'completed',
-            createdAt: new Date().toISOString()
+            status: 'completed'
         });
+        await refTransaction.save();
     }
     
-    writeDB(db);
+    const welcomeTransaction = new Transaction({
+        userId: newUser.id,
+        type: 'bonus',
+        amount: totalBonus,
+        description: `Welcome Bonus ₹${WELCOME_BONUS}${referralBonus ? ' + Referral ₹5' : ''}${isFirstUser ? ' + First User ₹10' : ''}`,
+        status: 'completed'
+    });
+    await welcomeTransaction.save();
     
     res.json({
         success: true,
-        message: 'Registration successful!',
-        user: { id: newUser.id, username: newUser.username, role: newUser.role },
         bonus: totalBonus,
         referralCode: newUser.referralCode,
         isFirstUser: isFirstUser
     });
 });
 
-app.post('/api/login', (req, res) => {
-    const db = readDB();
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    
-    const user = db.users.find(u => (u.username === username || u.email === username) && u.password === password);
+    const user = await User.findOne({ $or: [{ username }, { email: username }], password });
     
     if (user) {
         res.json({
@@ -488,7 +405,8 @@ app.post('/api/login', (req, res) => {
                 referralBonus: user.referralBonus || 0,
                 referralCount: user.referralCount || 0,
                 isFirstUser: user.isFirstUser || false,
-                password: user.password
+                password: user.password,
+                deviceId: user.deviceId
             }
         });
     } else {
@@ -497,33 +415,78 @@ app.post('/api/login', (req, res) => {
 });
 
 // ==================== STATS ROUTE ====================
-app.get('/api/stats', (req, res) => {
-    const db = readDB();
-    const users = db.users.filter(u => u.role === 'user');
-    const predictions = db.predictions;
-    const transactions = db.transactions || [];
+app.get('/api/stats', async (req, res) => {
+    const users = await User.countDocuments({ role: 'user' });
+    const predictions = await Prediction.countDocuments();
+    const predictionsList = await Prediction.find();
+    const transactions = await Transaction.find();
     
-    const totalDeposits = transactions.filter(t => t.type === 'deposit' && t.status === 'completed').reduce((sum, t) => sum + t.amount, 0);
-    const totalWithdrawals = transactions.filter(t => t.type === 'withdrawal' && t.status === 'completed').reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const totalBetAmount = predictions.reduce((sum, p) => sum + (p.betAmount || 0), 0);
-    const totalCommission = predictions.reduce((sum, p) => sum + (p.platformCommission || 0), 0);
+    const totalDeposits = transactions.filter(t => t.type === 'deposit' && t.status === 'completed').reduce((s, t) => s + t.amount, 0);
+    const totalWithdrawals = transactions.filter(t => t.type === 'withdrawal' && t.status === 'completed').reduce((s, t) => s + Math.abs(t.amount), 0);
+    const totalBetAmount = predictionsList.reduce((s, p) => s + (p.betAmount || 0), 0);
+    const totalCommission = predictionsList.reduce((s, p) => s + (p.platformCommission || 0), 0);
+    const pendingPayments = await PaymentRequest.countDocuments({ status: 'pending' });
+    const pendingWithdrawals = await WithdrawRequest.countDocuments({ status: 'pending' });
     
     res.json({
-        totalUsers: users.length,
-        totalPredictions: predictions.length,
+        totalUsers: users,
+        totalPredictions: predictions,
         totalDeposits,
         totalWithdrawals,
         totalBetAmount,
         totalCommission,
-        pendingPayments: (db.paymentRequests || []).filter(p => p.status === 'pending').length,
-        pendingWithdrawals: (db.withdrawRequests || []).filter(w => w.status === 'pending').length
+        pendingPayments,
+        pendingWithdrawals
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📁 Database file: ${DB_FILE}`);
-    console.log(`🔐 Admin Login: admin / admin123`);
-});
+// ==================== INIT DATA ====================
+async function initData() {
+    const adminExists = await User.findOne({ role: 'admin' });
+    if (!adminExists) {
+        const admin = new User({
+            username: 'admin',
+            email: 'admin@ipl.com',
+            password: 'admin123',
+            role: 'admin',
+            walletBalance: 0,
+            deviceId: 'admin_device',
+            referralCode: 'ADMIN123',
+            isActive: true
+        });
+        await admin.save();
+        console.log('✅ Admin created');
+    }
+    
+    const matchCount = await Match.countDocuments();
+    if (matchCount === 0) {
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + 7);
+        
+        const defaultMatch = new Match({
+            matchNumber: 1,
+            team1: 'Mumbai Indians',
+            team2: 'Chennai Super Kings',
+            date: futureDate,
+            time: '7:30 PM',
+            venue: 'Wankhede Stadium, Mumbai',
+            status: 'upcoming',
+            questions: [
+                { id: 'q1', text: '🏏 मैच कौन जीतेगा?', options: ['CSK', 'MI'] },
+                { id: 'q2', text: '🎯 सबसे ज्यादा विकेट कौन लेगा?', options: ['Rashkeeper', 'Mohit', 'Kuldeep', 'Other'] },
+                { id: 'q3', text: '🏆 प्लेयर ऑफ द मैच कौन होगा?', options: ['Virat Kohli', 'Rohit Sharma', 'MS Dhoni', 'Other'] },
+                { id: 'q4', text: '📊 कुल रन कितने होंगे?', options: ['Under 300', '300-350', '350-400', 'Over 400'] },
+                { id: 'q5', text: '💪 सबसे ज्यादा छक्के कौन लगाएगा?', options: ['CSK', 'MI', 'Equal', 'None'] }
+            ],
+            totalPool: 0
+        });
+        await defaultMatch.save();
+        console.log('✅ Default match created');
+    }
+}
 
-initDatabase();
+app.listen(PORT, async () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    await initData();
+    console.log(`🔐 Admin: admin / admin123`);
+});
