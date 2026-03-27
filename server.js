@@ -7,6 +7,10 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+// 🔥 HEALTH CHECK
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'OK', message: 'Server Running 🚀' });
+});
 
 // 🔥 MongoDB Connection (tune diya hai)
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://rahul:rahul12345@tournament-cluster.rhtjib.mongodb.net/iplpredictor?retryWrites=true&w=majority';
