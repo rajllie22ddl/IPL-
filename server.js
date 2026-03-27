@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 // Your MongoDB Connection
-const MONGODB_URI = "mongodb+srv://db_user:Rahul%4012345@cluster0.p431dub.mongodb.net/iplpredictor";
+const MONGODB_URI = "mongodb+srv://db_user:Rahul%4012345@cluster0.pda124a.mongodb.net/iplpredictor";
 
 mongoose.connect(MONGODB_URI)
 .then(() => console.log('✅ MongoDB Connected'))
