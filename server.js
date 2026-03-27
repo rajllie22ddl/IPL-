@@ -18,7 +18,14 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://rahul:rahul12345@t
 mongoose.connect(MONGODB_URI)
 .then(() => console.log('✅ MongoDB Connected'))
 .catch(err => console.log('❌ MongoDB Error:', err.message));
-
+mongoose.set('toJSON', {
+  virtuals: true,
+  transform: (_, ret) => {
+    ret.id = ret._id;
+    delete ret._id;
+    delete ret.__v;
+  }
+});
 // ==================== SCHEMAS ====================
 
 const userSchema = new mongoose.Schema({
