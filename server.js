@@ -7,25 +7,48 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
 // 🔥 HEALTH CHECK
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'Server Running 🚀' });
 });
 
-// 🔥 MongoDB Connection (tune diya hai)
+// 🔥 MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://rahul:rahul12345@tournament-cluster.rhtjib.mongodb.net/iplpredictor?retryWrites=true&w=majority';
 
 mongoose.connect(MONGODB_URI)
 .then(() => console.log('✅ MongoDB Connected'))
 .catch(err => console.log('❌ MongoDB Error:', err.message));
+
 mongoose.set('toJSON', {
-  virtuals: true,
-  transform: (_, ret) => {
-    ret.id = ret._id;
-    delete ret._id;
-    delete ret.__v;
-  }
+    virtuals: true,
+    transform: (_, ret) => {
+        ret.id = ret._id;
+        delete ret._id;
+        delete ret.__v;
+    }
 });
+
+// 🔥 Helper: Check if match has started
+function hasMatchStarted(matchDate, matchTime) {
+    const now = new Date();
+    const matchDateTime = new Date(matchDate);
+    
+    const timeMatch = matchTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (timeMatch) {
+        let hours = parseInt(timeMatch[1]);
+        const minutes = parseInt(timeMatch[2]);
+        const period = timeMatch[3].toUpperCase();
+        
+        if (period === 'PM' && hours !== 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+        
+        matchDateTime.setHours(hours, minutes, 0, 0);
+    }
+    
+    return now >= matchDateTime;
+}
+
 // ==================== SCHEMAS ====================
 
 const userSchema = new mongoose.Schema({
@@ -173,6 +196,24 @@ app.get('/api/predictions', async (req, res) => {
 
 app.post('/api/predictions', async (req, res) => {
     const prediction = new Prediction(req.body);
+    
+    // 🔥 FIX: Block prediction if match has started
+    const match = await Match.findById(prediction.matchId);
+    if (match) {
+        if (hasMatchStarted(match.date, match.time)) {
+            return res.json({ 
+                success: false, 
+                message: 'Match has already started! Cannot place prediction now.' 
+            });
+        }
+        if (match.status === 'completed') {
+            return res.json({ 
+                success: false, 
+                message: 'Match is already completed!' 
+            });
+        }
+    }
+    
     await prediction.save();
     
     const user = await User.findById(prediction.userId);
@@ -181,7 +222,6 @@ app.post('/api/predictions', async (req, res) => {
         await user.save();
     }
     
-    const match = await Match.findById(prediction.matchId);
     if (match) {
         match.totalPool = (match.totalPool || 0) + prediction.betAmount;
         await match.save();
